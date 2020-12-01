@@ -1,0 +1,324 @@
+---
+title: "Part one of IPM"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(nlme)
+rm(list = ls())
+```
+
+# 
+```{r}
+dataf=data.frame(read.table("ct.ipm.txt",header=T))
+
+# detach(dataf)
+attach(dataf) #The database is attached to the R search path. This means that the database is searched by R when evaluating a variable, so objects in the database can be accessed by simply giving their names.
+
+tmp = order(site[ros==1]) # creates an array used to maintain consistent indexing order. Only works if orginal dataframe is not rearranged
+
+size.t.all=log(nl.t*ll.t)[ros==1][tmp] # Log of number of leaves*length of longest leaf where ros == 1 in year t
+
+size.t1.all=log(nl.t1*ll.t1)[ros==1][tmp] # Log of number of leaves*length of longest leaf where ros == 1 in year t+1
+
+flow.all=flow[ros==1][tmp] # If ros==1, flowering
+
+surv.all=surv[ros==1][tmp] # If ros==1, survived
+
+site.all=site[ros==1][tmp] # If ros==1, what site?
+
+site.code.l=c("FU","SP")
+pch.code=c(19,1)
+
+all.sizes = c(size.t.all[flow.all==0], # Size of things that didn't flower in year t
+              size.t1.all[year.t == 2005]) # Size in year t + 1
+
+all.site = c(site.all[flow.all==0], # 
+             site.all[year.t == 2005])
+```
+
+## Explore data
+```{r  explore_data}
+
+# par(mfrow = c(1,2))
+# hist(dataf$nl.t, main="Number of leaves year t", breaks = 10)
+# hist(dataf$nl.t1, main="Number of leaves year t + 1", breaks = 10)
+# 
+# par(mfrow = c(1,2))
+# hist(dataf$ll.t, main="Length longest leaf year t", breaks = 10)
+# hist(dataf$ll.t1, main="length longest leaf year t + 1", breaks = 10)
+# 
+# table(dataf$surv)
+# table(dataf$flow)
+
+ggplot(dataf,aes(x=nl.t))+
+  geom_histogram() +
+  facet_wrap(~year.t)
+
+ggplot(dataf,aes(x=nl.t1))+
+  geom_histogram() +
+  facet_wrap(~year.t)
+
+ggplot(dataf,aes(x=ll.t))+
+  geom_histogram() +
+  facet_wrap(~year.t)
+
+ggplot(dataf,aes(x=ll.t1))+
+  geom_histogram() +
+  facet_wrap(~year.t)
+
+ggplot(dataf,aes(as.factor(x=surv)))+
+  geom_histogram(stat="count")
+
+ggplot(dataf,aes(x=flow))+
+  geom_histogram(stat="count")+
+  theme_classic()
+```
+
+
+#####################  Part (I) ##################################
+#
+# 	Fitting models
+#
+###################################################################
+
+
+#===============================================================
+#	Calculation: Growth
+#===============================================================
+```{r growth}
+
+size.t = size.t.all[flow.all == 0] 
+size.t1 = size.t1.all[flow.all == 0]
+site.s = as.character(site.all[flow.all == 0])
+
+test = complete.cases(size.t,size.t1,site.s)
+
+size.t = size.t[test]
+size.t1 = size.t1[test]
+site.s = site.s[test]
+
+# check whether variance structure is needed
+fit.grow.gls.1 <- gls(size.t1 ~ size.t + site.s, 
+                      na.action=na.omit,
+                      weight=varExp(form=~fitted(.)|site.s),
+                      method="ML");
+summary(fit.grow.gls.1)
+
+fit.grow.gls <- gls(size.t1 ~ size.t + site.s,
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)),
+                    method="ML");
+summary(fit.grow.gls)
+
+fit.grow.gls.0 <- gls(size.t1 ~ size.t + site.s,
+                      na.action=na.omit,
+                      method="ML");
+
+summary(fit.grow.gls.0)
+
+anova(fit.grow.gls.0,fit.grow.gls,fit.grow.gls.1) 
+
+# check whether intercept estimate for habitat is needed
+fit.grow.gls.0<-gls(size.t1~size.t,
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)|site.s),
+                    method="ML"); # Generalized least squares, maximum likelihood
+
+fit.grow.gls.1<-gls(size.t1~size.t+site.s,
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)|site.s),
+                    method="ML");
+
+fit.grow.gls.2<-gls(size.t1~size.t*site.s,
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)|site.s),
+                    method="ML");
+
+anova(fit.grow.gls.0,fit.grow.gls.1,fit.grow.gls.2)
+
+#refit model with size and site main effects, and site specific decreasing variance 
+
+fit.grow.gls<-gls(size.t1~site.s+size.t-1,
+                  na.action=na.omit,
+                  weight=varExp(form=~fitted(.)|site.s),
+                  method="ML");
+
+summary(fit.grow.gls)
+intervals(fit.grow.gls)
+
+g.intercepts=fit.grow.gls$coef[1:2]
+g.slopes=rep(fit.grow.gls$coef[3],2)
+var.exp.coef=fit.grow.gls$modelStruct$varStruct  
+sigma.g=fit.grow.gls$sigma
+
+```
+
+```{r plot_growth, fig.height=8, fig.width=8}
+
+par(mfrow=c(2,2), mar=c(3,3,1,2)+0.1, bty="l",pty="s", cex.main=1, cex.axis=1, cex.lab=1, tck=0.02, mgp=c(2, 0.3 ,0)) ;
+
+plot(size.t,size.t1,
+     type="n",
+     xlab="Plant size year t",
+     ylab="Plant size year t+1",
+     xlim=c(2,10),ylim=c(2,10))
+
+for(i in 1:2){
+  points(size.t[site.s==site.code.l[i]],size.t1[site.s==site.code.l[i]],pch=pch.code[i])
+  abline(g.intercepts[i],g.slopes[i],lty=i)
+  abline(0,1,lty=3)
+}
+
+text(2.3,10,labels="a)")
+legend(7,4.8, 
+       c("FU: n=735", "SP: n=357"), 
+       pch=c(19,1),lty=c(1,2),
+       bty="n",
+       xjust=0)
+```
+
+
+#===============================================================
+#	Calculation: Flowering
+#===============================================================
+```{r flowering}
+flow.s=flow.all[order(size.t.all)]; length(flow.s)
+site.s=site.all[order(size.t.all)]; length(site.s)
+size.t=size.t.all[order(size.t.all)]; length(size.t)
+
+store.size.flow=size.t[flow.s==1]
+store.site.flow=site.s[flow.s==1]
+
+fit.flow.1=glm(flow.s~size.t*site.s,family=binomial)
+fit.flow=glm(flow.s~size.t+site.s,family=binomial)
+fit.flow.0=glm(flow.s~size.t,family=binomial)
+
+anova(fit.flow.0,fit.flow,fit.flow.1,test="Chisq")
+
+fit.flow=glm(flow.s~site.s/size.t-1,family=binomial)
+
+f.intercepts=fit.flow$coef[1:2]
+f.slopes=c(fit.flow$coef[3:4])
+
+site.flow.SE=summary(fit.flow)$coef[5:6]
+```
+
+#===============================================================
+#	Plot: Flowering
+#===============================================================
+```{r plot_flowering}
+plot(size.t,flow.s,
+     type="n",
+     xlab="Plant size year t",
+     ylab="Probability of flowering (year t+1)",
+     xlim=c(2,10))
+
+n.size<-seq(2,10,length=1000) 
+
+for(i in 1:2){ 
+  ncuts<-50 
+  reps<-ceiling(length(size.t[site.s==site.code.l[i]])/ncuts) 
+  c.size<-gl(ncuts,reps,length=length(size.t[site.s==site.code.l[i]])) 
+  pflow<-as.numeric(sapply(split(flow.s[site.s==site.code.l[i]],c.size),mean,na.rm=T)) 
+  msize<-as.numeric(sapply(split(size.t[site.s==site.code.l[i]],c.size),mean,na.rm=T)) 
+  points(msize,pflow,pch=pch.code[i]) 
+  fitted<-exp(f.intercepts[i]+f.slopes[i]*n.size)/ (1+exp(f.intercepts[i]+f.slopes[i]*n.size)) 
+  points(n.size,fitted,type="l",lty=i)
+}
+
+text(2.3,1.0,labels="b)")
+legend(2, 0.35, 
+       c("FU: n=827", "SP: n=746"), 
+       pch=c(19,1),lty=c(1,2),
+       bty="n",
+       xjust=0)
+```
+
+#===============================================================
+#	Calculation: Survival
+#===============================================================
+```{r calc_survival}
+
+surv.s=surv.all[order(size.t.all)]
+site.s=site.all[order(size.t.all)]
+size.t=size.t.all[order(size.t.all)]
+
+fit.surv.1=glm(surv.s~size.t*site.s,family=binomial)
+fit.surv=glm(surv.s~size.t+site.s,family=binomial)
+fit.surv.0=glm(surv.s~size.t,family=binomial)
+
+anova(fit.surv.0,fit.surv,fit.surv.1,test="Chisq")
+
+fit.surv=glm(surv.s~site.s/size.t-1,family=binomial)
+
+s.intercepts=fit.surv$coef[1:2]
+s.slopes=c(fit.surv$coef[3:4])
+```
+
+#===============================================================
+#	Plot: Survival
+#===============================================================
+```{r plot_survival}
+
+plot(size.t,surv.s,
+     type="n",
+     xlab="Plant size year t",
+     ylab="Probability of survival to year t+1", 
+     xlim=c(2,10))
+
+n.size<-seq(2,10,length=1000) 
+
+for(i in 1:2){ 
+  ncuts<-50 
+  reps<-ceiling(length(size.t[site.s==site.code.l[i]])/ncuts) 
+  c.size<-gl(ncuts,reps,length=length(size.t[site.s==site.code.l[i]])) 
+  psurv<-as.numeric(sapply(split(surv.s[site.s==site.code.l[i]],c.size),mean,na.rm=T)) 
+  msize<-as.numeric(sapply(split(size.t[site.s==site.code.l[i]],c.size),mean,na.rm=T)) 
+  points(msize,psurv,pch=pch.code[i]) 
+  fitted<-exp(s.intercepts[i]+s.slopes[i]*n.size)/ (1+exp(s.intercepts[i]+s.slopes[i]*n.size)) 
+  points(n.size,fitted,type="l",lty=i)
+}
+
+text(2.3,1.0,labels="c)")
+legend(7,0.35, 
+       c("FU: n=827", "SP: n=746"), 
+       pch=c(19,1),lty=c(1,2),
+       bty="n",
+       xjust=0)
+```
+
+#===============================================================
+#	Calculation: Fecundity
+#===============================================================
+```{r calc_F}
+IPM.fecundity=data.frame(read.table("CT.IPM.fecundity.txt",header=T))
+
+# unbrowsed individuals
+size.t.f <- IPM.fecundity$size.t[IPM.fecundity$brows.t1==0]
+site.t.f =  IPM.fecundity$site[IPM.fecundity$brows.t1==0]
+si.t1.f <- IPM.fecundity$si.t1[IPM.fecundity$brows.t1==0]
+nl.t.f <- IPM.fecundity$nl.t[IPM.fecundity$brows.t1==0]
+
+fit.fec=lm(log(si.t1.f)~site.t.f+size.t.f-1)
+
+```
+
+
+#===============================================================
+#	Plot: Fecundity
+#===============================================================
+```{r plot_F}
+plot(size.t.f,log(si.t1.f),type="n",xlab="Plant size year t",ylab="Viable seeds (log scale) year t+1",pch=19,xlim=c(2,10),ylim=c(2,10))
+
+for(i in 1:2){
+  points(size.t.f[site.t.f==site.code.l[i]],log(si.t1.f)[site.t.f==site.code.l[i]],pch=pch.code[i])
+  abline(fit.fec$coef[i],fit.fec$coef[3],lty=i)
+}
+
+text(2.3,10,labels="d)")
+legend(7,4.75,c("FU: n=25", "SP: n=28"),pch=c(19,1),lty=c(1,2),bty="n",xjust=0)
+```
+

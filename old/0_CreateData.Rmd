@@ -1,0 +1,60 @@
+---
+title: "Create data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data simulation functions
+```{r get_functions}
+rm(list=ls())
+library(tidyverse)
+
+source("./R/1_ct.imp.txt.R")
+source("./R/2_ct.IPM.fecundity.R")
+source("./R/3_ct.IPM.seedlings.R")
+```
+
+# Create input files
+```{r input_files}
+params = list(sites = c("Niwot","Sierra","NCascades","Chugach","Absorkas"),
+                   popsize_mu = 200, 
+                   popsize_std = 25,
+                   S_rate = 0.8,
+                   F_rate = 0.05,
+                   years = c(2004:2010),
+                   n_ros = 1,
+                   B_rate = 0.15,
+                   seeds_mu = 5,
+                   E_rates = c(0.25, 0.3, 0.4, 0.5, 0.4))
+
+# 1. ct.ipm.txt
+dataf = ct.ipm_fun(sites = params$sites,
+                       popsize_mu = params$popsize_mu,
+                       popsize_std = params$popsize_std,
+                       years = params$years,
+                       S_rate = params$S_rate,
+                       F_rate = params$F_rate,
+                       n_ros = params$n_ros)
+```
+
+
+```{r input_files}
+# 2. "ct.IPM.fecundity.txt"
+IPM.fecundity <- ct.ipm.fecundity_fun(input_df = dataf,
+                              B_rate = params$B_rate,
+                              seeds_mu = params$seeds_mu)
+```
+
+
+```{r input_files}
+data3 <- ct.ipm.seedling_fun(input_df = data2,
+                             sites = params$sites,
+                             E_rate = params$E_rate)
+
+hist(data3$size.t)
+
+```
+
