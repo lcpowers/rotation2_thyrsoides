@@ -1,0 +1,39 @@
+---
+title: "Create data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data simulation functions
+```{r get_functions}
+
+# ct.ipm.txt
+source("./R/1_ct.imp.txt.R")
+
+# cr.IPM.fecundity.txt
+
+```
+
+# Create input files
+```{r input_files}
+
+data_params = list(sites = c("Niwot","Sierra","NCascades","Chugach","Absorkas"),
+                   popsize_mu = 50, popsize_std = 10,
+                   S_rate = 0.8,
+                   F_rate = 0.05,
+                   years = c(2004:2010),
+                   n_ros = 1)
+
+dataf = ct.ipm.txt_fun(sites = data_params$sites,
+                       popsize_mu = data_params$popsize_mu,
+                       popsize_std = data_params$popsize_std,
+                       years = data_params$years,
+                       S_rate = data_params$S_rate,
+                       F_rate = data_params$F_rate,
+                       n_ros = data_params$n_ros)
+
+```
+
