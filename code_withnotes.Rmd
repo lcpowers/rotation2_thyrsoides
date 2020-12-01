@@ -413,7 +413,7 @@ maxsize<-12
 
 # Global variables for midpoint rule approximation 
 # n.big.matrix is the number of mesh points for size, n.age is the number of age classes. 
-n.big.matrix = 100; n.age = 50; n=n.big.matrix ## I think in paper they said 100 mesh points
+n.big.matrix = 250; n.age = 50; n=n.big.matrix ## 
 
 L= minsize; U= maxsize;
 
@@ -556,11 +556,11 @@ R0.calc<-function(n,params){
 		T=NA } 
   
   else{
-		N <- solve(M$Imatrix-M$Pmatrix) ## ??
+		N <- solve(M$Imatrix-M$Pmatrix) ## ?? Some linear algebra operation
 		R <- M$Bmatrix %*% N ## Matrix multiplication
-		ave.R0<-Re(eigen(R)$values[1]) ## 
-		lam<-Re(eigen(M$matrix)$values[1]);
-		T=log(ave.R0)/log(lam)
+		ave.R0<-Re(eigen(R)$values[1]) ## Re: real; eigen:returns vector of eigenvalues. values[1] is the first eigenvalue in returned vector 
+		lam<-Re(eigen(M$matrix)$values[1]); ## Re: real; eigen:returns vector of eigenvalues. values[1] is the first eigenvalue in returned vector 
+		T=log(ave.R0)/log(lam) ## ?? understand why this is true
 	}
 
 	return(list(lam=lam,ave.R0=ave.R0,T=T))
@@ -568,8 +568,8 @@ R0.calc<-function(n,params){
 
 R0.betas<-function(x){
   
-	p.vec[3] <- x; 
-	nR0 <- R0.calc(n.big.matrix, p.vec)
+	p.vec[3] <- x; ## p.vec[3] = 1st flow pram. Assign value of x to that
+	nR0 <- R0.calc(n.big.matrix, p.vec) 
 	return(nR0$ave.R0)
 	
 }
@@ -583,50 +583,62 @@ gen.time=rep(NA,2)
 
 for(i in 1:2){
 	#if(i==1) p.est= 8.604605e-05 else p.est=0.0001655622  # assuming dd-reg
-	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]   # actual
-	p.vec=store.p.vec[,i]
-	tmp=R0.calc(n.big.matrix,p.vec)
-	gen.time[i]=tmp$T
-	cat("Site ",i," lambda=",tmp$lam," R0=",tmp$ave.R0," Generation time=",tmp$T,"\n")
-	cat("ESS intercept ", optimize(R0.betas, c(-100,10), maximum=T, tol=0.01)$maximum,"\n")
+	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]   # actual ## site specific parameters
+	p.vec=store.p.vec[,i] ## Site-specific parameters
+	tmp=R0.calc(n.big.matrix,p.vec) 
+	gen.time[i]=tmp$T ## get T from list of value returned from R0.calc
+	cat("Site ",i," lambda=",tmp$lam," R0=",tmp$ave.R0," Generation time=",tmp$T,"\n") ## Print results
+	cat("ESS intercept ", optimize(R0.betas, c(-100,10), maximum=T, tol=0.01)$maximum,"\n") ## Print results
 }
 
 ```
 
 #### Calculation: Evolutionarily stable strategy
 ```{r calc_ESS}
-n.test <- 100
-R0.beta <- array(NA,dim=c(n.test,2));
-lam.beta <- array(NA,dim=c(n.test,2));
-ESS = rep(NA,2)
+
+n.test <- 100 ##
+R0.beta <- array(NA,dim=c(n.test,2)); ## 100x2 matrix array of NAs
+lam.beta <- array(NA,dim=c(n.test,2)); ## 100x2 matrix array of NAs
+ESS = rep(NA,2) ## 2x1 vector of NAs to store ESS
+
 ```
 
 #### Plot: Evolutionarily stable strategy
 ```{r plot_ESS}
-dev.new()
+
+dev.new() ## Start new plot window
 par(mfrow=c(2,2), mar=c(3,3,1,2)+0.1, bty="l",pty="s", cex.main=1, cex.axis=1, cex.lab=1, tck=0.02, mgp=c(2, 0.3 ,0)) ;
 
+## 
 for(i in 1:2){
-	p.vec=store.p.vec[,i]
+	p.vec=store.p.vec[,i] ## Site specific parameters
 	#if(i==1) p.est= 8.604605e-05 else p.est=0.0001655622  # assuming dd-reg
 	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]   # actual
-	if(i==1) beta.flow<-seq(-100,0,length=n.test) else beta.flow<-seq(-50,0,length=n.test);
+	if(i==1) beta.flow<-seq(-100,0,length=n.test) else beta.flow<-seq(-50,0,length=n.test); ## Why -50 for SP and -100 for FU?
 
+	## Beta test -- 
 	for(beta.test in 1:n.test){
-		p.vec[3]<-beta.flow[beta.test];
-		nR0<-R0.calc(n.big.matrix,p.vec)
-		R0.beta[beta.test,i]<-nR0$ave.R0
-		lam.beta[beta.test,i]<-nR0$lam
+		
+	  p.vec[3]<-beta.flow[beta.test]; ## Assign flowering intercept
+		nR0<-R0.calc(n.big.matrix,p.vec) ## Get R0 associated with the flowering intercept above
+		R0.beta[beta.test,i]<-nR0$ave.R0 ## Fill ave.R0 into R0beta matrix that was created above
+		lam.beta[beta.test,i]<-nR0$lam ## Same for lambda
 		cat(beta.flow[beta.test],"  ",nR0$ave.R0,"  ",nR0$lam,"\n")
+		
 	}
 
+	## Put ESS into matrix created above. ESS here is flowering intercept where R0 is highest
 	ESS[i]<-beta.flow[R0.beta[,i]==max(R0.beta[,i])]
 
-	plot(beta.flow,R0.beta[,i],type="n",xlab=expression("Intercept of flowering function " * italic(beta * scriptstyle(0))),
-	ylab=expression(italic("R"*scriptstyle(0))))
+	## plot
+	plot(beta.flow,R0.beta[,i],
+	     type="n",
+	     xlab=expression("Intercept of flowering function " * italic(beta * scriptstyle(0))),
+	     ylab=expression(italic("R"*scriptstyle(0))))
+	
 	min.R0=min(R0.beta[,i]); max.R0=max(R0.beta[,i])
-	mean.m2se=fit.flow$coef[i]-2*site.flow.SE[i]
-	mean.p2se=fit.flow$coef[i]+2*site.flow.SE[i]
+	mean.m2se=fit.flow$coef[i]-2*site.flow.SE[i] ## lower boundary for confidence interval
+  mean.p2se=fit.flow$coef[i]+2*site.flow.SE[i] ## upper boundary for confidence interval
 
 	polygon(c(mean.m2se,mean.p2se,mean.p2se,mean.m2se),c(min.R0,min.R0,max.R0,max.R0), col="grey90",border=0)
 	points(beta.flow,R0.beta[,i],type="l")
