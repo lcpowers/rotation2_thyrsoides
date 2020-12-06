@@ -63,6 +63,7 @@ columns:	site == Population abbreviation (here: FU == Furka Pass, SP == Schynige
 		age == Age 2005   
 
 ---
+
 #### Load packages
 ```{r packages, message=FALSE}
 # Clear environment
@@ -78,6 +79,8 @@ setwd("~/Desktop/IQ/Rotation2/rotation2_thyrsoides")
 
 # Detach any lingering attached datafs
 while(any(search()=="dataf_r1")) detach(dataf_r1)
+while(any(search()=="dataf")) detach(dataf)
+while(any(search()=="growth_df")) detach(growth_df)
 ```
 
 
@@ -199,7 +202,118 @@ g.intercepts=fit.grow.gls$coef[1:2] ## Growth intercepts for each site
 g.slopes=rep(fit.grow.gls$coef[3],2) ## Growth slopes for each site
 var.exp.coef=fit.grow.gls$modelStruct$varStruct ## coef for variance structure
 sigma.g=fit.grow.gls$sigma ## Residual standard error
+
 ```
+
+## Increase growth rates -- size.t1 should be a little higher for faster growth rate
+```{r growth}
+
+sites = c("FU","SP")
+
+inc_size.t1 <- rep(-9999,nrow(growth_df))
+dec_size.t1 <- rep(-9999,nrow(growth_df))
+
+for(site_i in sites){
+  
+  size_diffs <- growth_df$size.t1[growth_df$site.s == site_i] - growth_df$size.t[growth_df$site.s == site_i]
+  
+  # Look at distributions
+  par(mfrow = c(1,1))
+  hist(size_diffs, breaks=20, main = site_i)
+  
+  # Set changes
+  avg_size_diffs <- mean(size_diffs,na.rm = T)
+  sd_size_diffs <- sd(size_diffs,na.rm = T)
+  
+  size_diff_changes <- rnorm(n = length(size_diffs),
+                                mean = avg_size_diffs,
+                                sd = sd_size_diffs)
+  
+  growth_df$inc_size.t1[growth_df$site.s == site_i] <- growth_df$size.t1[growth_df$site.s == site_i] + size_diff_changes
+
+  # Resample to create vector to decrease year t + 1 sizes by
+  size_diff_changes <- rnorm(n = length(size_diffs), 
+                             mean = avg_size_diffs, 
+                             sd = sd_size_diffs)
+
+  # New column with smaller year t1 sizes
+  growth_df$dec_size.t1[growth_df$site.s == site_i] <- growth_df$size.t1[growth_df$site.s == site_i] - size_diff_changes
+  
+  # Compare distributions of true sizes to fake larger sizes
+  par(mfrow = c(1,3))
+  hist(growth_df$size.t1[growth_df$site.s == site_i], breaks=20, main = site_i, xlab = "no change")
+  hist(growth_df$inc_size.t1[growth_df$site.s == site_i], breaks=20, main = site_i, xlab = "size inc")
+  hist(growth_df$dec_size.t1[growth_df$site.s == site_i], breaks=20, main = site_i, xlab = "size dec")
+  
+  # Compare summaries of true sizes to fake smaller sizes
+  print(c(site_i,"no change:"))
+  print(summary(growth_df$size.t1[growth_df$site.s == site_i]))
+  cat("\n")
+  print(c(site_i,"increase:"))
+  print(summary(growth_df$inc_size.t1[growth_df$site.s == site_i]))
+  cat("\n")
+  print(c(site_i,"decrease:"))
+  print(summary(growth_df$dec_size.t1[growth_df$site.s == site_i]))
+  cat("----\n")
+
+}
+
+```
+
+#### Refit growth equation using new year t1 data
+```{r new_growth_fit}
+# none, increase, or decrease
+
+change_type = "decrease"
+
+######### refit model with size and site main effects, and site specific decreasing variance #########
+if(change_type == "decrease"){
+  
+  fit.grow.gls<-gls(dec_size.t1~site.s+size.t-1, ## Why -1?
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)|site.s),
+                    method="ML",
+                    data=growth_df)
+  
+  g.intercepts=fit.grow.gls$coef[1:2] ## Growth intercepts for each site
+  g.slopes=rep(fit.grow.gls$coef[3],2) ## Growth slopes for each site
+  var.exp.coef=fit.grow.gls$modelStruct$varStruct ## coef for variance structure
+  sigma.g=fit.grow.gls$sigma ## Residual standard error
+
+}
+
+if(change_type == "increase"){
+  
+  fit.grow.gls<-gls(inc_size.t1~site.s+size.t-1, ## Why -1?
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)|site.s),
+                    method="ML",
+                    data=growth_df)
+  
+  g.intercepts=fit.grow.gls$coef[1:2] ## Growth intercepts for each site
+  g.slopes=rep(fit.grow.gls$coef[3],2) ## Growth slopes for each site
+  var.exp.coef=fit.grow.gls$modelStruct$varStruct ## coef for variance structure
+  sigma.g=fit.grow.gls$sigma ## Residual standard error
+
+}
+
+if(change_type == "none"){
+  
+  fit.grow.gls<-gls(size.t1~site.s+size.t-1, ## Why -1?
+                    na.action=na.omit,
+                    weight=varExp(form=~fitted(.)|site.s),
+                    method="ML",
+                    data=growth_df)
+  
+  g.intercepts=fit.grow.gls$coef[1:2] ## Growth intercepts for each site
+  g.slopes=rep(fit.grow.gls$coef[3],2) ## Growth slopes for each site
+  var.exp.coef=fit.grow.gls$modelStruct$varStruct ## coef for variance structure
+  sigma.g=fit.grow.gls$sigma ## Residual standard error
+
+}
+
+```
+
 
 #### Plot: Annual Growth
 ```{r plot_growth}
@@ -361,7 +475,7 @@ ggplot() +
   scale_shape_manual(name = "",values = c(16,1), labels = c("FU: n=735","SP: n=357")) +
   scale_color_manual(name = "",values = c(SPcol, FUcol), labels = c("FU: n=735","SP: n=357"))+
   theme_classic()+
-  labs(x="Plant size year t", y="Plant size year t+1")+
+  labs(x="Plant size year t", y="Viable seeds (log scale) year t+1")+
   xlim(2,10)+
   ylim(2,10) +
   theme(legend.position = c(0.8, 0.2),
@@ -413,7 +527,7 @@ maxsize<-12
 
 # Global variables for midpoint rule approximation 
 # n.big.matrix is the number of mesh points for size, n.age is the number of age classes. 
-n.big.matrix = 100; n.age = 50; n=n.big.matrix ## I think in paper they said 100 mesh points
+n.big.matrix = 250; n.age = 50; n=n.big.matrix ## 
 
 L= minsize; U= maxsize;
 
@@ -556,11 +670,11 @@ R0.calc<-function(n,params){
 		T=NA } 
   
   else{
-		N <- solve(M$Imatrix-M$Pmatrix) ## ??
+		N <- solve(M$Imatrix-M$Pmatrix) ## ?? Some linear algebra operation
 		R <- M$Bmatrix %*% N ## Matrix multiplication
-		ave.R0<-Re(eigen(R)$values[1]) ## 
-		lam<-Re(eigen(M$matrix)$values[1]);
-		T=log(ave.R0)/log(lam)
+		ave.R0<-Re(eigen(R)$values[1]) ## Re: real; eigen:returns vector of eigenvalues. values[1] is the first eigenvalue in returned vector 
+		lam<-Re(eigen(M$matrix)$values[1]); ## Re: real; eigen:returns vector of eigenvalues. values[1] is the first eigenvalue in returned vector 
+		T=log(ave.R0)/log(lam) ## ?? understand why this is true
 	}
 
 	return(list(lam=lam,ave.R0=ave.R0,T=T))
@@ -568,8 +682,8 @@ R0.calc<-function(n,params){
 
 R0.betas<-function(x){
   
-	p.vec[3] <- x; 
-	nR0 <- R0.calc(n.big.matrix, p.vec)
+	p.vec[3] <- x; ## p.vec[3] = 1st flow pram. Assign value of x to that
+	nR0 <- R0.calc(n.big.matrix, p.vec) 
 	return(nR0$ave.R0)
 	
 }
@@ -583,50 +697,67 @@ gen.time=rep(NA,2)
 
 for(i in 1:2){
 	#if(i==1) p.est= 8.604605e-05 else p.est=0.0001655622  # assuming dd-reg
-	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]   # actual
-	p.vec=store.p.vec[,i]
-	tmp=R0.calc(n.big.matrix,p.vec)
-	gen.time[i]=tmp$T
-	cat("Site ",i," lambda=",tmp$lam," R0=",tmp$ave.R0," Generation time=",tmp$T,"\n")
-	cat("ESS intercept ", optimize(R0.betas, c(-100,10), maximum=T, tol=0.01)$maximum,"\n")
+	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]   # actual ## site specific parameters
+	p.vec=store.p.vec[,i] ## Site-specific parameters
+	tmp=R0.calc(n.big.matrix,p.vec) 
+	gen.time[i]=tmp$T ## get T from list of value returned from R0.calc
+	cat("Site ",i," lambda=",tmp$lam," R0=",tmp$ave.R0," Generation time=",tmp$T,"\n") ## Print results
+	cat("ESS intercept ", optimize(R0.betas, c(-100,10), maximum=T, tol=0.01)$maximum,"\n") ## Print results
 }
 
 ```
 
+#### #
+#### Run all chunks abouve for change in growth
+#### #
+
 #### Calculation: Evolutionarily stable strategy
 ```{r calc_ESS}
-n.test <- 100
-R0.beta <- array(NA,dim=c(n.test,2));
-lam.beta <- array(NA,dim=c(n.test,2));
-ESS = rep(NA,2)
+
+n.test <- 100 ##
+R0.beta <- array(NA,dim=c(n.test,2)); ## 100x2 matrix array of NAs
+lam.beta <- array(NA,dim=c(n.test,2)); ## 100x2 matrix array of NAs
+ESS = rep(NA,2) ## 2x1 vector of NAs to store ESS
+
 ```
+
 
 #### Plot: Evolutionarily stable strategy
 ```{r plot_ESS}
-dev.new()
+
+dev.new() ## Start new plot window
 par(mfrow=c(2,2), mar=c(3,3,1,2)+0.1, bty="l",pty="s", cex.main=1, cex.axis=1, cex.lab=1, tck=0.02, mgp=c(2, 0.3 ,0)) ;
 
+## 
 for(i in 1:2){
-	p.vec=store.p.vec[,i]
+	p.vec=store.p.vec[,i] ## Site specific parameters
 	#if(i==1) p.est= 8.604605e-05 else p.est=0.0001655622  # assuming dd-reg
 	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]   # actual
-	if(i==1) beta.flow<-seq(-100,0,length=n.test) else beta.flow<-seq(-50,0,length=n.test);
+	if(i==1) beta.flow<-seq(-100,0,length=n.test) else beta.flow<-seq(-50,0,length=n.test); ## Why -50 for SP and -100 for FU?
 
+	## Beta test -- 
 	for(beta.test in 1:n.test){
-		p.vec[3]<-beta.flow[beta.test];
-		nR0<-R0.calc(n.big.matrix,p.vec)
-		R0.beta[beta.test,i]<-nR0$ave.R0
-		lam.beta[beta.test,i]<-nR0$lam
+		
+	  p.vec[3]<-beta.flow[beta.test]; ## Assign flowering intercept
+		nR0<-R0.calc(n.big.matrix,p.vec) ## Get R0 associated with the flowering intercept above
+		R0.beta[beta.test,i]<-nR0$ave.R0 ## Fill ave.R0 into R0beta matrix that was created above
+		lam.beta[beta.test,i]<-nR0$lam ## Same for lambda
 		cat(beta.flow[beta.test],"  ",nR0$ave.R0,"  ",nR0$lam,"\n")
+		
 	}
 
+	## Put ESS into matrix created above. ESS here is flowering intercept where R0 is highest
 	ESS[i]<-beta.flow[R0.beta[,i]==max(R0.beta[,i])]
 
-	plot(beta.flow,R0.beta[,i],type="n",xlab=expression("Intercept of flowering function " * italic(beta * scriptstyle(0))),
-	ylab=expression(italic("R"*scriptstyle(0))))
+	## plot
+	plot(beta.flow,R0.beta[,i],
+	     type="n",
+	     xlab=expression("Intercept of flowering function " * italic(beta * scriptstyle(0))),
+	     ylab=expression(italic("R"*scriptstyle(0))))
+	
 	min.R0=min(R0.beta[,i]); max.R0=max(R0.beta[,i])
-	mean.m2se=fit.flow$coef[i]-2*site.flow.SE[i]
-	mean.p2se=fit.flow$coef[i]+2*site.flow.SE[i]
+	mean.m2se=fit.flow$coef[i]-2*site.flow.SE[i] ## lower boundary for confidence interval
+  mean.p2se=fit.flow$coef[i]+2*site.flow.SE[i] ## upper boundary for confidence interval
 
 	polygon(c(mean.m2se,mean.p2se,mean.p2se,mean.m2se),c(min.R0,min.R0,max.R0,max.R0), col="grey90",border=0)
 	points(beta.flow,R0.beta[,i],type="l")
@@ -660,11 +791,11 @@ for(i in 1:2){
 P <- array(NA,dim=c(n.big.matrix,n.big.matrix)) #P[j,i,a] will be h*P_{a-1}(x_j,x_i)
 B <- array(NA,dim=c(n.big.matrix,n.big.matrix)) #B[j,i,a] will be h*F_{a-1}(x_j,x_i)
 
-stable.dist=array(NA,dim=c(n,n.age,2))
-lam.stable.age=rep(NA,2);
+stable.dist=array(NA,dim=c(n,n.age,2)) ## 250x50x2 array -- 3rd dimension is site
+lam.stable.age=rep(NA,2); ## 1x2 array for lambda at stable age distribution
 
 for(i in 1:2){
-	p.vec=store.p.vec[,i]
+	p.vec=store.p.vec[,i] ## site specific parameters
 	if(i==1) p.est=est.p.est[1] else p.est=est.p.est[2]
 	P<-h*t(outer(y,y,pxy,params=p.vec))
 	B<-h*t(outer(y,y,fxy,params=p.vec))
@@ -674,6 +805,7 @@ for(i in 1:2){
 #============================================================================================#
 
 	# population now and next year 
+	# Matrices filled with 0
 	Nt=matrix(0,n.big.matrix,n.age); 
 	Nt1=Nt 
 	Nt2=Nt	
@@ -697,7 +829,7 @@ for(i in 1:2){
   # Estimate lambda and w by iterating unperturbed matrix  
 	Nt1=matrix(1,n.big.matrix,n.age); 
 	Nt=Nt1
-	qmax=1000; 
+	qmax=1000; ## What is
 	lam=1; 
 	tol=1.e-8; 
 	while(qmax>tol) {
@@ -721,6 +853,7 @@ for(i in 1:2){
 }
 ```
 
+
 #### Calculation: Stable distribution and size-dependent total elasticity 
 ```{r calc_stable_distribution}
 stable.dist.flow=stable.dist
@@ -737,6 +870,7 @@ for(i in 1:2){
 	stable.dist.flow[,,i]=stable.dist.flow[,,i]/(sum(stable.dist.flow[,,i]))
 }
 
+# detach(dataf)
 dataf=data.frame(read.table("ipm.saf.data.txt",header=T))
 attach(dataf)
 
@@ -748,6 +882,7 @@ site=as.numeric(site)
 stable.dist.age=array(NA,dim=c(n.age,2))
 stable.dist.age.flow=array(NA,dim=c(n.age,2))
 ```
+
 
 ##### Plot: Stable age distribution (see Fig. 2)
 ```{r plot_stable_distribution}
@@ -839,7 +974,7 @@ lam.stable.tl
 #### Calculation: sensitivity and elasticity by perturbation P matrix
 ```{r calc_Sens_Elas}
 
-sen.big.P<-array(NA,dim=c(n,n)) 	#array to store the results 
+sen.big.P<-array(NA,dim=c(n,n)) 	# array to store the results 
 elas.big.P<-array(NA,dim=c(n,n,2)) 
 
 for(i in 1:2){
@@ -910,7 +1045,7 @@ elas.big.B<-array(NA,dim=c(n,n,2))
 
 for(i in 1:2){
 	p.vec=store.p.vec[,i]
-	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2]               #actual
+	if(i==1) p.est= est.p.est[1] else p.est=est.p.est[2] # actual
 
 	P<-h*t(outer(y,y,pxy,params=p.vec))
 	B<-h*t(outer(y,y,fxy,params=p.vec))
@@ -1100,8 +1235,8 @@ Res.p.est
 #### Plot: Simulated Lambda, R0 and T with varying p.est (see Figure 4)
 ```{r plot_sim}
 
-# dev.new()
-par(mfrow=c(1,3), mar=c(3,3,1,2)+0.1, bty="l",pty="s", cex.main=1, cex.axis=1, cex.lab=1, tck=0.02, mgp=c(2, 0.3 ,0)) ;
+dev.new()
+par(mfrow=c(1,3), mar=c(3,3,1,2)+0.1, bty="l",pty="s", cex.main=1, cex.axis=1, cex.lab=1, tck=0.02, mgp=c(2, 0.3 ,0)) 
 
 plot(Res.p.est[,1],Res.p.est[,3],type="n",xlab=expression(paste(italic(p)[e])),ylab=expression(lambda))
 	lines(Res.p.est[,1],Res.p.est[,3],lty=1)
@@ -1114,7 +1249,7 @@ plot(Res.p.est[,1],Res.p.est[,5],type="n",xlab=expression(paste(italic(p)[e])),y
 	lines(Res.p.est[,1],Res.p.est[,6],lty=2)
 	points(p.est.FU,1.67, pch=19, cex=2.0); points(p.est.SP,4.97, pch=1, cex=2.0)
 
-plot(Res.p.est[,1],Res.p.est[,7],type="n",xlab=expression(paste(italic(p)[e])),ylab=expression(italic(T)),ylim=c(10,13))
+plot(Res.p.est[,1],Res.p.est[,7],type="n",xlab=expression(paste(italic(p)[e])),ylab=expression(italic(T)),ylim=c(8,50))
 	lines(Res.p.est[,1],Res.p.est[,7],lty=1)
 	lines(Res.p.est[,1],Res.p.est[,8],lty=2)
 	points(p.est.FU,10.82, pch=19, cex=2.0); points(p.est.SP,10.37, pch=1, cex=2.0)
